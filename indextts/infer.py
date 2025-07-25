@@ -1,3 +1,4 @@
+import io
 import os
 import sys
 import time
@@ -9,7 +10,7 @@ import torchaudio
 from torch.nn.utils.rnn import pad_sequence
 from omegaconf import OmegaConf
 from tqdm import tqdm
-
+from pydub import AudioSegment, effects  
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -21,7 +22,6 @@ from indextts.utils.checkpoint import load_checkpoint
 from indextts.utils.feature_extractors import MelSpectrogramFeatures
 
 from indextts.utils.front import TextNormalizer, TextTokenizer
-
 
 class IndexTTS:
     def __init__(
@@ -659,12 +659,108 @@ class IndexTTS:
             wav_data = wav_data.numpy().T
             return (sampling_rate, wav_data)
 
+    def get_speaker_latents(self, speaker_name):
+        current_embeddings = []
+        embedding = None
+        current_size = 0
+        max_size = 4096
+        if os.path.exists("./speaker_latents/" + speaker_name + ".speaker"):
+            embedding = torch.load("./speaker_latents/" + speaker_name + ".speaker")
+        else:
+            print("Computing " + speaker_name)
+            for audio_path in tqdm(os.listdir("./speaker_audio/" + speaker_name + "/"), disable=True):
+                
+                temp = io.BytesIO()
+                file_found = AudioSegment.from_file("./speaker_audio/" + speaker_name + "/" + audio_path)
+                resampled_audio = file_found.set_frame_rate(24000)
+                resampled_audio.export(temp, format="wav")
+                audio, sr = torchaudio.load(io.BytesIO(temp.getvalue()))
+                audio = torch.mean(audio, dim=0, keepdim=True)
+                if audio.shape[0] > 1:
+                    audio = audio[0].unsqueeze(0)
+                if audio.shape[1] == 0:
+                    print("Skipping " + speaker_name + "/" + audio_path + ", bad file")
+                    continue
+                audio = torchaudio.transforms.Resample(sr, 24000)(audio)
+                cond_mel = MelSpectrogramFeatures()(audio).to(self.device)
+                if current_size + cond_mel.shape[1] > max_size:
+                    break # Can't load any more references
+                current_size += cond_mel.shape[2]
+                current_embeddings.append(cond_mel)
+            embedding = torch.cat(current_embeddings, dim=2)
+            torch.save(embedding, "./speaker_latents/" + speaker_name + ".speaker")
+        return embedding
 
-if __name__ == "__main__":
-    prompt_wav="test_data/input.wav"
-    #text="晕 XUAN4 是 一 种 GAN3 觉"
-    #text='大家好，我现在正在bilibili 体验 ai 科技，说实话，来之前我绝对想不到！AI技术已经发展到这样匪夷所思的地步了！'
-    text="There is a vehicle arriving in dock number 7?"
 
-    tts = IndexTTS(cfg_path="checkpoints/config.yaml", model_dir="checkpoints", is_fp16=True, use_cuda_kernel=False)
-    tts.infer(audio_prompt=prompt_wav, text=text, output_path="gen.wav", verbose=True)
+    # 原始推理模式
+    def infer_tg(self, cached_voice, text, output_path, max_text_tokens_per_sentence=120, **generation_kwargs):
+        self._set_gr_progress(0, "start inference...")
+        start_time = time.perf_counter()
+        cond_mel = cached_voice
+        cond_mel_frame = cond_mel.shape[-1]
+        auto_conditioning = cond_mel
+        text_tokens_list = self.tokenizer.tokenize(text)
+        sentences = self.tokenizer.split_sentences(text_tokens_list, max_text_tokens_per_sentence)
+        do_sample = generation_kwargs.pop("do_sample", True)
+        top_p = generation_kwargs.pop("top_p", 0.8)
+        top_k = generation_kwargs.pop("top_k", 30)
+        temperature = generation_kwargs.pop("temperature", 1.0)
+        autoregressive_batch_size = 1
+        length_penalty = generation_kwargs.pop("length_penalty", 0.0)
+        num_beams = generation_kwargs.pop("num_beams", 1)
+        repetition_penalty = generation_kwargs.pop("repetition_penalty", 10.0)
+        max_mel_tokens = generation_kwargs.pop("max_mel_tokens", 600)
+        sampling_rate = 24000
+        wavs = []
+        has_warned = False
+        for sent in sentences:
+            text_tokens = self.tokenizer.convert_tokens_to_ids(sent)
+            text_tokens = torch.tensor(text_tokens, dtype=torch.int32, device=self.device).unsqueeze(0)
+            with torch.no_grad():
+                with torch.amp.autocast(text_tokens.device.type, enabled=self.dtype is not None, dtype=self.dtype):
+                    codes = self.gpt.inference_speech(auto_conditioning, text_tokens,
+                                                        cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]],
+                                                                                      device=text_tokens.device),
+                                                        # text_lengths=text_len,
+                                                        do_sample=do_sample,
+                                                        top_p=top_p,
+                                                        top_k=top_k,
+                                                        temperature=temperature,
+                                                        num_return_sequences=autoregressive_batch_size,
+                                                        length_penalty=length_penalty,
+                                                        num_beams=num_beams,
+                                                        repetition_penalty=repetition_penalty,
+                                                        max_generate_length=max_mel_tokens,
+                                                        **generation_kwargs)
+                if not has_warned and (codes[:, -1] != self.stop_mel_token).any():
+                    warnings.warn(
+                        f"WARN: generation stopped due to exceeding `max_mel_tokens` ({max_mel_tokens}). "
+                        f"Input text tokens: {text_tokens.shape[1]}. "
+                        f"Consider reducing `max_text_tokens_per_sentence`({max_text_tokens_per_sentence}) or increasing `max_mel_tokens`.",
+                        category=RuntimeWarning
+                    )
+                    has_warned = True
+
+                code_lens = torch.tensor([codes.shape[-1]], device=codes.device, dtype=codes.dtype)
+
+                # remove ultra-long silence if exits
+                # temporarily fix the long silence bug.
+                codes, code_lens = self.remove_long_silence(codes, silent_token=52, max_consecutive=30)
+                # latent, text_lens_out, code_lens_out = \
+                with torch.amp.autocast(text_tokens.device.type, enabled=self.dtype is not None, dtype=self.dtype):
+                    latent = \
+                        self.gpt(auto_conditioning, text_tokens,
+                                    torch.tensor([text_tokens.shape[-1]], device=text_tokens.device), codes,
+                                    code_lens*self.gpt.mel_length_compression,
+                                    cond_mel_lengths=torch.tensor([auto_conditioning.shape[-1]], device=text_tokens.device),
+                                    return_latent=True, clip_inputs=False)
+                    wav, _ = self.bigvgan(latent, auto_conditioning.transpose(1, 2))
+                    wav = wav.squeeze(1)
+
+                wav = torch.clamp(32767 * wav, -32767.0, 32767.0)
+                wavs.append(wav.cpu())  # to cpu before saving
+        wav = torch.cat(wavs, dim=1)
+
+        # save audio
+        wav = wav.cpu()  # to cpu
+        torchaudio.save(output_path, wav.type(torch.int16), sampling_rate, format="wav")

@@ -20,6 +20,9 @@ sentencepiece
 librosa
 gradio
 tqdm
+flask
+waitress
+deepspeed
 
 WeTextProcessing; platform_machine != "Darwin"
 wetext; platform_system == "Darwin"
