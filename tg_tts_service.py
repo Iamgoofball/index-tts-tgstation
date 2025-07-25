@@ -48,9 +48,9 @@ strip_silence = lambda x: trim_trailing_silence(trim_leading_silence(x))
 latent_cache = {}
 voice_name_mapping_reversed = {v: k for k, v in voice_name_mapping.items()}
 global request_count
+
 @app.route("/generate-tts")
 def text_to_speech():
-
 	text = request.json.get("text", "")
 	voice = request.json.get("voice", "")
 	pitch_adjustment = request.json.get("pitch", "")
@@ -118,64 +118,6 @@ def audiosegment_to_librosawav(audiosegment):
 
     return fp_arr
 
-@app.route("/generate-tts-blips")
-def text_to_speech_blips():
-	text = request.json.get("text", "").upper()
-	voice = request.json.get("voice", "")
-	pitch_adjustment = request.json.get("pitch", "")
-	print(voice + " (" + pitch_adjustment + ") blips, " + "\"" + text + "\"")
-	if use_voice_name_mapping:
-		voice = voice_name_mapping_reversed[voice]
-	result = None
-	actual_text_found = False
-	with io.BytesIO() as data_bytes:
-		for i, letter in enumerate(text):
-			if letter in letters_to_use:
-				actual_text_found = True
-				break
-		if not actual_text_found:
-			stub_file = AudioSegment.empty()
-			stub_file.set_frame_rate(24000)
-			stub_file.export(data_bytes, format = "wav")
-			result = send_file(io.BytesIO(data_bytes.getvalue()), mimetype="audio/wav")
-			return result
-		with torch.no_grad():
-			result_sound = AudioSegment.empty()
-			if not os.path.exists('samples/' + voice) or len(os.listdir('samples/' + voice)) < 36:
-				os.makedirs('samples/' + voice, exist_ok=True)
-				loaded_speaker = tts.get_speaker_latents(voice)
-				for i, value in enumerate(letters_to_use):
-					tts.infer_tg(cached_voice=loaded_speaker, text=value, output_path="samples/" + voice + "/" + value + ".wav")
-			for i, letter in enumerate(text):
-				if not letter.isalpha() or letter.isnumeric() or letter == " ":
-					continue
-				if letter == ' ':
-					letter_sound = AudioSegment.empty()
-					new_sound = letter_sound._spawn(b'\x00' * (24000 // 3), overrides={'frame_rate': 24000})
-					new_sound = new_sound.set_frame_rate(24000)
-				else:
-					if not i % 2 == 0:
-						continue # Skip every other letter
-					if not os.path.isfile("samples/" + voice + "/" + letter + ".wav"):
-						continue
-					letter_sound = AudioSegment.from_file("samples/" + voice + "/" + letter + ".wav")
-					stripped_sound = strip_silence(letter_sound)
-					raw = stripped_sound.raw_data[5000:-7500]
-					octaves = 1 + random.random() * random_factor
-					frame_rate = int(stripped_sound.frame_rate * (2.0 ** octaves))
-
-					new_sound = stripped_sound._spawn(raw, overrides={'frame_rate': frame_rate})
-					new_sound = new_sound.set_frame_rate(24000)
-					
-					result_sound += new_sound
-			sf.write(data_bytes, librosa.effects.pitch_shift(audiosegment_to_librosawav(result_sound), sr=24000, n_steps=int(pitch_adjustment), bins_per_octave=48), 24000, format="wav")
-			rawsound = AudioSegment.from_file(io.BytesIO(data_bytes.getvalue()), "wav")  
-			normalizedsound = effects.normalize(rawsound)  
-			normalizedsound.export(data_bytes, format="wav")
-		
-		result = send_file(io.BytesIO(data_bytes.getvalue()), mimetype="audio/wav")
-	return result
-
 @app.route("/tts-voices")
 def voices_list():
 	if use_voice_name_mapping:
@@ -185,10 +127,7 @@ def voices_list():
 	
 @app.route("/health-check")
 def tts_health_check():
-	gc.collect()
-	if request_count > 2048:
-		return f"EXPIRED: {request_count}", 500
-	return f"OK: {request_count}", 200
+    return f"OK: 1", 200
 
 @app.route("/pitch-available")
 def pitch_available():
@@ -204,5 +143,6 @@ if __name__ == "__main__":
 	trash = io.BytesIO()
 	tts.infer_tg(cached_voice=list(latent_cache.values())[0], text="The quick brown fox jumps over the lazy dog.", output_path=trash)
 	del trash
-	serve(app, host="0.0.0.0", port=5003, threads=8, backlog=32, connection_limit=24, channel_timeout=8)
+	print("Serving TTS on :5003")
+	serve(app, host="0.0.0.0", port=5003, backlog=32, channel_timeout=8)
 	

@@ -15,8 +15,8 @@ RUN apt update && \
   nvidia-cuda-toolkit \
   libvorbis-dev
 
-RUN pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1
+RUN pip3 install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 COPY . .
 
-RUN pip install .
+RUN pip install -e . --no-build-isolation
