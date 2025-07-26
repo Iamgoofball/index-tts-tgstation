@@ -91,24 +91,10 @@ class TextNormalizer:
         import platform
         if self.zh_normalizer is not None and self.en_normalizer is not None:
             return
-        if platform.system() == "Darwin":
-            from wetext import Normalizer
+        from wetext import Normalizer
 
-            self.zh_normalizer = Normalizer(remove_erhua=False, lang="zh", operator="tn")
-            self.en_normalizer = Normalizer(lang="en", operator="tn")
-        else:
-            from tn.chinese.normalizer import Normalizer as NormalizerZh
-            from tn.english.normalizer import Normalizer as NormalizerEn
-            # use new cache dir for build tagger rules with disable remove_interjections and remove_erhua
-            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tagger_cache")
-            if not os.path.exists(cache_dir):
-                os.makedirs(cache_dir)
-                with open(os.path.join(cache_dir, ".gitignore"), "w") as f:
-                    f.write("*\n")
-            self.zh_normalizer = NormalizerZh(
-                cache_dir=cache_dir, remove_interjections=False, remove_erhua=False, overwrite_cache=False
-            )
-            self.en_normalizer = NormalizerEn(overwrite_cache=False)
+        self.zh_normalizer = Normalizer(remove_erhua=False, lang="zh", operator="tn")
+        self.en_normalizer = Normalizer(lang="en", operator="tn")
 
     def normalize(self, text: str) -> str:
         text = text.replace("嗯", "恩").replace("呣", "母")
@@ -133,7 +119,6 @@ class TextNormalizer:
             result = pattern.sub(lambda x: self.zh_char_rep_map[x.group()], result)
         else:
             try:
-                text = re.sub(TextNormalizer.ENGLISH_CONTRACTION_PATTERN, r"\1 is", text, flags=re.IGNORECASE)
                 result = self.en_normalizer.normalize(text)
             except Exception:
                 result = text

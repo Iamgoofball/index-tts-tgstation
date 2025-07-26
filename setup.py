@@ -63,7 +63,7 @@ setup(
         "pysbd",
         "pydub",
         "blake3",
-        "wetext" if platform.system() != "Linux" else "WeTextProcessing",
+        "wetext",
     ],
     extras_require={
         "webui": ["gradio"],
