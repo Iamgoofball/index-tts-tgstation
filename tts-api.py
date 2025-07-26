@@ -8,6 +8,7 @@ import pysbd
 import pydub
 import random
 import time
+from blake3 import blake3
 from flask import Flask, request, send_file, abort, make_response
 
 tts_sample_rate = 24000
@@ -16,7 +17,8 @@ segmenter = pysbd.Segmenter(language="en", clean=True)
 radio_starts = ["./on1.wav", "./on2.wav"]
 radio_ends = ["./off1.wav", "./off2.wav", "./off3.wav", "./off4.wav"]
 authorization_token = os.getenv("TTS_AUTHORIZATION_TOKEN", "REPLACE_ME")
-
+cached_messages = []
+max_to_cache = 5
 
 def now() -> int:
     return time.time_ns() // 1_000_000
@@ -41,15 +43,29 @@ def text_to_speech_handler(
     start_time = now()
 
     for sentence in segmenter.segment(text):
-        response = requests.get(
-            endpoint,
-            json={"text": sentence, "voice": voice, "pitch": pitch},
-        )
-
-        if response.status_code != 200:
-            abort(response.status_code)
-
-        final_audio += pydub.AudioSegment.from_file(io.BytesIO(response.content), "wav")
+        sentence_audio = pydub.AudioSegment.empty()
+        if endpoint == "generate-tts": # we dont cache blips for obvious reasons
+            merged_text = voice + text + str(pitch)
+            hashed_message = blake3(merged_text.encode("utf-8")).hexdigest()
+            if hashed_message in cached_messages and os.path.exists("./cache/" + hashed_message + "/"):
+                cached_sentences = [f for f in os.listdir("./cache/" + hashed_message + "/") if os.path.isfile(os.path.join("./cache/" + hashed_message + "/", f))]
+                if len(cached_sentences) >= max_to_cache:
+                    sentence_audio = pydub.AudioSegment.from_file(os.path.join("./cache/" + hashed_message + "/", random.choice(cached_sentences)), "wav")
+                else:
+                    response = requests.get(f"http://127.0.0.1:5003/" + endpoint, json={ 'text': sentence, 'voice': voice, 'pitch': pitch })
+                    if response.status_code != 200:
+                        abort(500)
+                    sentence_audio = pydub.AudioSegment.from_file(io.BytesIO(response.content), "wav")
+                    sentence_audio.export("./cache/" + hashed_message + "/cached_" + str(len(cached_sentences)) + ".wav", format="wav")
+            else:
+                os.mkdir("./cache/" + hashed_message + "/")
+                response = requests.get(f"http://127.0.0.1:5003/" + endpoint, json={ 'text': sentence, 'voice': voice, 'pitch': pitch })
+                if response.status_code != 200:
+                    abort(500)
+                sentence_audio = pydub.AudioSegment.from_file(io.BytesIO(response.content), "wav")
+                sentence_audio.export("./cache/" + hashed_message + "/cached_0.wav", format="wav")
+                cached_messages.append(hashed_message)
+        final_audio += sentence_audio
         sentence_silence = pydub.AudioSegment.silent(250, tts_sample_rate)
         final_audio += sentence_silence
         # ""Goldman-Eisler (1968) determined that typical speakers paused for an average of 250 milliseconds (ms), with a range from 150 to 400 ms.""
@@ -241,12 +257,11 @@ def pitch_available():
 if __name__ == "__main__":
     from waitress import serve
 
-    # response = requests.get(f"http://haproxy:5003/tts-voices")
-    # list_of_voices = json.loads(response.content)
-    # for voice in list_of_voices:
-    # 	dummy_request = requests.get(f"http://haproxy:5003/generate-tts", json={ 'text': "Hello, this is my voice.", 'voice': voice, 'pitch': "0" })
-    # 	if dummy_request.status_code != 200:
-    # 		print(dummy_request.status_code)
+    print("Loading cached messages...")
+    directories = [f for f in os.listdir("./cache/") if os.path.isdir(os.path.join("./cache/", f))]
+    for directory in directories:
+        cached_messages.append(directory)
+    print("Loaded " + str(len(cached_messages)) + " messages.")
     serve(
         app,
         host="0.0.0.0",

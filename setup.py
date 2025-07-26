@@ -56,7 +56,13 @@ setup(
         "sentencepiece",
         "librosa",
         "numpy",
-        "deepspeed"
+        "deepspeed",
+        "flask",
+        "waitress",
+        "deepspeed",
+        "pysbd",
+        "pydub",
+        "blake3",
         "wetext" if platform.system() != "Linux" else "WeTextProcessing",
     ],
     extras_require={

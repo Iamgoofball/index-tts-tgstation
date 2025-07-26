@@ -1,128 +1,131 @@
-networks:
-  default:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: "192.168.0.0/24"
-          gateway: "192.168.0.1"
 services:
   haproxy:
     image: docker.io/library/haproxy:3.0.11 # previously 3.3-dev
     volumes:
       - /mnt/f/index-tts-tgstation/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    networks:
-      - default
     depends_on:
       - tts1
       - tts2
       - tts3
-      - tts4
-      - tts5
       - api1
       - api2
       - api3
-      - api4
-      - api5
     ports:
-      - 5003:5003
+      - 5002:5002
+      - 8888:8888
   api1:
-    build: /workspace
+    build: .
     command: python tts-api.py
     networks:
       - default
+    environment:
+      - TORCH_USE_CUDA_DSA=1
+      - TORCH_CUDNN_SDPA_ENABLED=1
+      - TORCH_LOG=perf_hints
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   api2:
-    build: /workspace
+    build: .
     command: python tts-api.py
     networks:
       - default
+    environment:
+      - TORCH_USE_CUDA_DSA=1
+      - TORCH_CUDNN_SDPA_ENABLED=1
+      - TORCH_LOG=perf_hints
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   api3:
-    build: /workspace
+    build: .
     command: python tts-api.py
     networks:
       - default
-  api4:
-    build: /workspace
-    command: python tts-api.py
-    networks:
-      - default
-  api5:
-    build: /workspace
-    command: python tts-api.py
-    networks:
-      - default
+    environment:
+      - TORCH_USE_CUDA_DSA=1
+      - TORCH_CUDNN_SDPA_ENABLED=1
+      - TORCH_LOG=perf_hints
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   tts1:
-    build: /workspace
+    build: .
     command: python tg_tts_service.py
     networks:
       - default
     volumes:
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/voice_mapping.json:/workspace/voice_mapping.json:rw
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
       - TORCH_LOG=perf_hints
-    devices:
-      - nvidia.com/gpu=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   tts2:
-    build: /workspace
+    build: .
     command: python tg_tts_service.py
     networks:
       - default
     volumes:
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/voice_mapping.json:/workspace/voice_mapping.json:rw
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
       - TORCH_LOG=perf_hints
-    devices:
-      - nvidia.com/gpu=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   tts3:
-    build: /workspace
+    build: .
     command: python tg_tts_service.py
     networks:
       - default
     volumes:
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/voice_mapping.json:/workspace/voice_mapping.json:rw
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
       - TORCH_LOG=perf_hints
-    devices:
-      - nvidia.com/gpu=all
-  tts4:
-    build: /workspace
-    command: python tg_tts_service.py
-    networks:
-      - default
-    volumes:
-      - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
-      - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
-    environment:
-      - TORCH_USE_CUDA_DSA=1
-      - TORCH_CUDNN_SDPA_ENABLED=1
-      - TORCH_LOG=perf_hints
-    devices:
-      - nvidia.com/gpu=all
-  tts5:
-    build: /workspace
-    command: python tg_tts_service.py
-    networks:
-      - default
-    volumes:
-      - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
-      - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
-    environment:
-      - TORCH_USE_CUDA_DSA=1
-      - TORCH_CUDNN_SDPA_ENABLED=1
-      - TORCH_LOG=perf_hints
-    devices:
-      - nvidia.com/gpu=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
   blips:
-    build: /workspace
+    build: .
     command: python tg_tts_service_blips.py
     networks:
       - default
@@ -130,9 +133,15 @@ services:
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/samples:/workspace/samples:rw
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/voice_mapping.json:/workspace/voice_mapping.json:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
       - TORCH_LOG=perf_hints
-    devices:
-      - nvidia.com/gpu=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

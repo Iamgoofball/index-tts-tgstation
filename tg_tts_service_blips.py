@@ -28,9 +28,6 @@ import soundfile as sf
 from tqdm import tqdm
 from indextts.infer import IndexTTS
 
-print("I: Loading IndexTTS into memory...")
-tts = IndexTTS(cfg_path="checkpoints/config.yaml", model_dir="checkpoints", is_fp16=True, device="cuda:0", use_cuda_kernel=False)
-print("Done loading.")
 voice_name_mapping = {}
 use_voice_name_mapping = True
 with open("./voice_mapping.json", "r") as file:
@@ -104,12 +101,6 @@ def text_to_speech_blips():
             return result
         with torch.no_grad():
             result_sound = AudioSegment.empty()
-            if not os.path.exists('samples/' + voice) or len(os.listdir('samples/' + voice)) < 36:
-                os.makedirs('samples/' + voice, exist_ok=True)
-                loaded_speaker = tts.get_speaker_latents(voice)
-                for i, value in enumerate(letters_to_use):
-                    tts.infer_tg(cached_voice=loaded_speaker, text=value, output_path="samples/" + voice + "/" + value + ".wav")
-                    blips_cache["samples/" + voice + "/" + value + ".wav"] = AudioSegment.from_file("samples/" + voice + "/" + value + ".wav")
             for i, letter in enumerate(text):
                 if not letter.isalpha() or letter.isnumeric() or letter == " ":
                     continue
@@ -160,21 +151,29 @@ def pitch_available():
 
 if __name__ == "__main__":
     from waitress import serve
-    print("Beginning voice caching")
-    for k,v in tqdm(voice_name_mapping.items()):
-        latent_cache[k] = tts.get_speaker_latents(k)
-        for letter in letters_to_use:
-            file_path = "samples/" + k + "/" + letter + ".wav"
+    if len(os.listdir('./samples/')) < len(voice_name_mapping.items()):
+        print("Only " + str(len(os.listdir('./samples/'))) + " voices have blips, total count is " + str(len(voice_name_mapping.items())))
+        print("I: Loading IndexTTS into memory...")
+        tts = IndexTTS(cfg_path="checkpoints/config.yaml", model_dir="checkpoints", is_fp16=True, device="cuda:0", use_cuda_kernel=True)
+        print("Done loading.")
+        for voice,v in tqdm(voice_name_mapping.items()):
+            if not os.path.exists('samples/' + voice) or len(os.listdir('samples/' + voice)) < 36:
+                os.makedirs('samples/' + voice, exist_ok=True)
+                loaded_speaker = tts.get_speaker_latents(voice)
+                for i, value in enumerate(letters_to_use):
+                    tts.infer_tg(cached_voice=loaded_speaker, text=value, output_path="samples/" + voice + "/" + value + ".wav")
+        print("Done making blips! Reboot the server to get blips generation.")
+    else:
+        print("Beginning voice caching")
+        for k,v in tqdm(voice_name_mapping.items()):
+            for letter in letters_to_use:
+                file_path = "samples/" + k + "/" + letter + ".wav"
 
-            if not os.path.exists(file_path):
-                continue
+                if not os.path.exists(file_path):
+                    continue
 
-            blips_cache[file_path] = AudioSegment.from_file(file_path)
-    print("Cached voices.")
-    print("Warming model up...")
-    trash = io.BytesIO()
-    tts.infer_tg(cached_voice=list(latent_cache.values())[0], text="The quick brown fox jumps over the lazy dog.", output_path=trash)
-    del trash
-    print("Serving TTS Blips on :5003")
-    serve(app, host="0.0.0.0", port=5003, backlog=32, channel_timeout=8)
-    
+                blips_cache[file_path] = AudioSegment.from_file(file_path)
+        print("Cached voices.")
+        print("Serving TTS Blips on :5003")
+        serve(app, host="0.0.0.0", port=5003, backlog=32, channel_timeout=8)
+        

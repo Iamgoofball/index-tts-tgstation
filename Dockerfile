@@ -1,4 +1,4 @@
-FROM docker.io/pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+FROM docker.io/pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel
 
 WORKDIR /workspace
 
@@ -14,8 +14,8 @@ RUN apt update && \
   libportaudiocpp0 \
   nvidia-cuda-toolkit \
   libvorbis-dev
-
-RUN pip3 install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+ENV TORCH_CUDA_ARCH_LIST=8.9
+RUN pip3 install torch torchaudio --index-url https://download.pytorch.org/whl/cu127
 
 COPY . .
 

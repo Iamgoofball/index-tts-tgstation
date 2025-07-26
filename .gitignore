@@ -13,3 +13,6 @@ build/
 *.py[cod]
 *.egg-info/
 .venv
+samples/**/*.wav
+speaker_latents/*.speaker
+cache/**/*.wav

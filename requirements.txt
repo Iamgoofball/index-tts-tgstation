@@ -23,6 +23,9 @@ tqdm
 flask
 waitress
 deepspeed
+pysbd
+pydub
+blake3
 
 WeTextProcessing; platform_machine != "Darwin"
 wetext; platform_system == "Darwin"
