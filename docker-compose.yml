@@ -18,6 +18,8 @@ services:
     command: python tts-api.py
     networks:
       - default
+    volumes:
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
@@ -34,6 +36,8 @@ services:
     command: python tts-api.py
     networks:
       - default
+    volumes:
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
@@ -50,6 +54,8 @@ services:
     command: python tts-api.py
     networks:
       - default
+    volumes:
+      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
@@ -70,7 +76,6 @@ services:
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/voice_mapping.json:/workspace/voice_mapping.json:rw
-      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
@@ -91,7 +96,6 @@ services:
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/voice_mapping.json:/workspace/voice_mapping.json:rw
-      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1
@@ -112,7 +116,6 @@ services:
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/speaker_latents:/workspace/speaker_latents:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/checkpoints:/workspace/checkpoints:rw
       - /mnt/f/DDSP-SVC/chatterbox/index-tts/voice_mapping.json:/workspace/voice_mapping.json:rw
-      - /mnt/f/DDSP-SVC/chatterbox/index-tts/cache:/workspace/cache:rw
     environment:
       - TORCH_USE_CUDA_DSA=1
       - TORCH_CUDNN_SDPA_ENABLED=1

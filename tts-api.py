@@ -18,7 +18,7 @@ radio_starts = ["./on1.wav", "./on2.wav"]
 radio_ends = ["./off1.wav", "./off2.wav", "./off3.wav", "./off4.wav"]
 authorization_token = os.getenv("TTS_AUTHORIZATION_TOKEN", "REPLACE_ME")
 cached_messages = []
-max_to_cache = 5
+max_to_cache = 10
 
 def now() -> int:
     return time.time_ns() // 1_000_000
@@ -43,31 +43,40 @@ def text_to_speech_handler(
     start_time = now()
 
     for sentence in segmenter.segment(text):
-        sentence_audio = pydub.AudioSegment.empty()
-        if endpoint == "generate-tts": # we dont cache blips for obvious reasons
-            merged_text = voice + text + str(pitch)
+        sentence_audio = None
+        if endpoint == "http://haproxy:5003/generate-tts": # we dont cache blips for obvious reasons
+            merged_text = voice + sentence + str(pitch)
             hashed_message = blake3(merged_text.encode("utf-8")).hexdigest()
             if hashed_message in cached_messages and os.path.exists("./cache/" + hashed_message + "/"):
                 cached_sentences = [f for f in os.listdir("./cache/" + hashed_message + "/") if os.path.isfile(os.path.join("./cache/" + hashed_message + "/", f))]
                 if len(cached_sentences) >= max_to_cache:
                     sentence_audio = pydub.AudioSegment.from_file(os.path.join("./cache/" + hashed_message + "/", random.choice(cached_sentences)), "wav")
                 else:
-                    response = requests.get(f"http://127.0.0.1:5003/" + endpoint, json={ 'text': sentence, 'voice': voice, 'pitch': pitch })
+                    response = requests.get(
+                        endpoint,
+                        json={"text": sentence, "voice": voice, "pitch": pitch},
+                    )
+
                     if response.status_code != 200:
-                        abort(500)
+                        abort(response.status_code)
                     sentence_audio = pydub.AudioSegment.from_file(io.BytesIO(response.content), "wav")
                     sentence_audio.export("./cache/" + hashed_message + "/cached_" + str(len(cached_sentences)) + ".wav", format="wav")
             else:
-                os.mkdir("./cache/" + hashed_message + "/")
-                response = requests.get(f"http://127.0.0.1:5003/" + endpoint, json={ 'text': sentence, 'voice': voice, 'pitch': pitch })
+                if not os.path.exists("./cache/" + hashed_message + "/"):
+                    os.mkdir("./cache/" + hashed_message + "/")
+                response = requests.get(
+                    endpoint,
+                    json={"text": sentence, "voice": voice, "pitch": pitch},
+                )
+
                 if response.status_code != 200:
-                    abort(500)
+                    abort(response.status_code)
                 sentence_audio = pydub.AudioSegment.from_file(io.BytesIO(response.content), "wav")
                 sentence_audio.export("./cache/" + hashed_message + "/cached_0.wav", format="wav")
                 cached_messages.append(hashed_message)
-        final_audio += sentence_audio
         sentence_silence = pydub.AudioSegment.silent(250, tts_sample_rate)
-        final_audio += sentence_silence
+        sentence_audio += sentence_silence
+        final_audio += sentence_audio
         # ""Goldman-Eisler (1968) determined that typical speakers paused for an average of 250 milliseconds (ms), with a range from 150 to 400 ms.""
         # (https://scholarsarchive.byu.edu/cgi/viewcontent.cgi?article=10153&context=etd)
 
