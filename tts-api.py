@@ -74,6 +74,15 @@ def text_to_speech_handler(
                 sentence_audio = pydub.AudioSegment.from_file(io.BytesIO(response.content), "wav")
                 sentence_audio.export("./cache/" + hashed_message + "/cached_0.wav", format="wav")
                 cached_messages.append(hashed_message)
+        else:
+            response = requests.get(
+                endpoint,
+                json={"text": sentence, "voice": voice, "pitch": pitch},
+            )
+
+            if response.status_code != 200:
+                abort(response.status_code)
+            sentence_audio = pydub.AudioSegment.from_file(io.BytesIO(response.content), "wav")
         sentence_silence = pydub.AudioSegment.silent(250, tts_sample_rate)
         sentence_audio += sentence_silence
         final_audio += sentence_audio

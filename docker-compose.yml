@@ -15,7 +15,7 @@ services:
       - 8888:8888
   api1:
     build: .
-    command: python tts-api.py
+    command: python -u tts-api.py
     networks:
       - default
     volumes:
@@ -33,7 +33,7 @@ services:
               capabilities: [gpu]
   api2:
     build: .
-    command: python tts-api.py
+    command: python -u tts-api.py
     networks:
       - default
     volumes:
@@ -51,7 +51,7 @@ services:
               capabilities: [gpu]
   api3:
     build: .
-    command: python tts-api.py
+    command: python -u tts-api.py
     networks:
       - default
     volumes:
@@ -69,7 +69,7 @@ services:
               capabilities: [gpu]
   tts1:
     build: .
-    command: python tg_tts_service.py
+    command: python -u tg_tts_service.py
     networks:
       - default
     volumes:
@@ -89,7 +89,7 @@ services:
               capabilities: [gpu]
   tts2:
     build: .
-    command: python tg_tts_service.py
+    command: python -u tg_tts_service.py
     networks:
       - default
     volumes:
@@ -109,7 +109,7 @@ services:
               capabilities: [gpu]
   tts3:
     build: .
-    command: python tg_tts_service.py
+    command: python -u tg_tts_service.py
     networks:
       - default
     volumes:
@@ -129,7 +129,7 @@ services:
               capabilities: [gpu]
   blips:
     build: .
-    command: python tg_tts_service_blips.py
+    command: python -u tg_tts_service_blips.py
     networks:
       - default
     volumes:

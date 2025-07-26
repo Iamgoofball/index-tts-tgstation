@@ -54,7 +54,7 @@ def text_to_speech():
 	text = request.json.get("text", "")
 	voice = request.json.get("voice", "")
 	pitch_adjustment = request.json.get("pitch", "")
-	#print(voice + " (" + pitch_adjustment + ") says, " + "\"" + text + "\"")
+	print(voice + " (" + pitch_adjustment + ") says, " + "\"" + text + "\"")
 	if use_voice_name_mapping:
 		voice = voice_name_mapping_reversed[voice]
 	result = None
