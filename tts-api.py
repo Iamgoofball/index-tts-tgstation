@@ -43,7 +43,7 @@ def text_to_speech_handler(
     start_time = now()
 
     for sentence in segmenter.segment(text):
-        sentence_audio = None
+        sentence_audio = pydub.AudioSegment.empty()
         if endpoint == "http://haproxy:5003/generate-tts": # we dont cache blips for obvious reasons
             merged_text = voice + sentence + str(pitch)
             hashed_message = blake3(merged_text.encode("utf-8")).hexdigest()
