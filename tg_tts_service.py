@@ -15,7 +15,7 @@ from tqdm import tqdm
 from indextts.infer import IndexTTS
 
 print("I: Loading IndexTTS into memory...")
-tts = IndexTTS(cfg_path="checkpoints/config.yaml", model_dir="checkpoints", is_fp16=True, device="cuda:0", use_cuda_kernel=True)
+tts = IndexTTS(cfg_path="checkpoints/config.yaml", model_dir="checkpoints", is_fp16=True, device="cuda:0", use_cuda_kernel=False)
 print("Done loading.")
 voice_name_mapping = {}
 use_voice_name_mapping = True

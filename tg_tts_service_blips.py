@@ -108,7 +108,7 @@ if __name__ == "__main__":
     if len(os.listdir('./samples/')) < len(voice_name_mapping.items()):
         print("Only " + str(len(os.listdir('./samples/'))) + " voices have blips, total count is " + str(len(voice_name_mapping.items())))
         print("I: Loading IndexTTS into memory...")
-        tts = IndexTTS(cfg_path="checkpoints/config.yaml", model_dir="checkpoints", is_fp16=True, device="cuda:0", use_cuda_kernel=True)
+        tts = IndexTTS(cfg_path="checkpoints/config.yaml", model_dir="checkpoints", is_fp16=True, device="cuda:0", use_cuda_kernel=False)
         print("Done loading.")
         for voice,v in tqdm(voice_name_mapping.items()):
             if not os.path.exists('samples/' + voice) or len(os.listdir('samples/' + voice)) < 36:
