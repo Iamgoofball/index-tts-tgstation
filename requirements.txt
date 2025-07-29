@@ -22,7 +22,6 @@ gradio
 tqdm
 flask
 waitress
-deepspeed
 pysbd
 pydub
 blake3
