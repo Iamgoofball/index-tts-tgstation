@@ -15,6 +15,7 @@ RUN apt update && \
   nvidia-cuda-toolkit \
   libvorbis-dev
 ENV TORCH_CUDA_ARCH_LIST=8.9
+
 RUN pip3 install torch torchaudio --index-url https://download.pytorch.org/whl/cu127
 
 COPY . .
