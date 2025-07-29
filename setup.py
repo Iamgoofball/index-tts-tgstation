@@ -22,7 +22,6 @@ setup(
         "sentencepiece",
         "librosa",
         "numpy",
-        "deepspeed",
         "flask",
         "waitress",
         "pysbd",
