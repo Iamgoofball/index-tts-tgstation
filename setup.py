@@ -64,6 +64,7 @@ setup(
         "pydub",
         "blake3",
         "wetext",
+        "stftpitchshift",
     ],
     extras_require={
         "webui": ["gradio"],

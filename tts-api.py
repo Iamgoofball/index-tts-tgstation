@@ -8,9 +8,16 @@ import pysbd
 import pydub
 import random
 import time
+import numpy as np
+import soundfile as sf
 from blake3 import blake3
 from flask import Flask, request, send_file, abort, make_response
+from pydub.silence import detect_leading_silence
+from stftpitchshift import StftPitchShift
 
+trim_leading_silence = lambda x: x[detect_leading_silence(x) :]
+trim_trailing_silence = lambda x: trim_leading_silence(x.reverse()).reverse()
+strip_silence = lambda x: trim_trailing_silence(trim_leading_silence(x))
 tts_sample_rate = 24000
 app = Flask(__name__)
 segmenter = pysbd.Segmenter(language="en", clean=True)
@@ -19,6 +26,7 @@ radio_ends = ["./off1.wav", "./off2.wav", "./off3.wav", "./off4.wav"]
 authorization_token = os.getenv("TTS_AUTHORIZATION_TOKEN", "REPLACE_ME")
 cached_messages = []
 max_to_cache = 10
+pitch_shifter = StftPitchShift(1024, 256, 24000)
 
 def now() -> int:
     return time.time_ns() // 1_000_000
@@ -32,9 +40,18 @@ def hhmmss_to_seconds(string):
     new_time += float(separated_times[2])
     return new_time
 
+def audiosegment_to_librosawav(audiosegment):    
+    channel_sounds = audiosegment.split_to_mono()
+    samples = [s.get_array_of_samples() for s in channel_sounds]
+
+    fp_arr = np.array(samples).T.astype(np.float32)
+    fp_arr /= np.iinfo(samples[0].typecode).max
+    fp_arr = fp_arr.reshape(-1)
+
+    return fp_arr
 
 def text_to_speech_handler(
-    endpoint, voice, text, filter_complex, pitch, special_filters=[]
+    endpoint, voice, text, filter_complex, pitch, special_filters=[], 
 ):
     filter_complex = filter_complex.replace('"', "")
     data_bytes = io.BytesIO()
@@ -45,7 +62,7 @@ def text_to_speech_handler(
     for sentence in segmenter.segment(text):
         sentence_audio = pydub.AudioSegment.empty()
         if endpoint == "http://haproxy:5003/generate-tts": # we dont cache blips for obvious reasons
-            merged_text = voice + sentence + str(pitch)
+            merged_text = voice + sentence
             hashed_message = blake3(merged_text.encode("utf-8")).hexdigest()
             if hashed_message in cached_messages and os.path.exists("./cache/" + hashed_message + "/"):
                 cached_sentences = [f for f in os.listdir("./cache/" + hashed_message + "/") if os.path.isfile(os.path.join("./cache/" + hashed_message + "/", f))]
@@ -54,7 +71,7 @@ def text_to_speech_handler(
                 else:
                     response = requests.get(
                         endpoint,
-                        json={"text": sentence, "voice": voice, "pitch": pitch},
+                        json={"text": sentence, "voice": voice},
                     )
 
                     if response.status_code != 200:
@@ -66,7 +83,7 @@ def text_to_speech_handler(
                     os.mkdir("./cache/" + hashed_message + "/")
                 response = requests.get(
                     endpoint,
-                    json={"text": sentence, "voice": voice, "pitch": pitch},
+                    json={"text": sentence, "voice": voice},
                 )
 
                 if response.status_code != 200:
@@ -77,7 +94,7 @@ def text_to_speech_handler(
         else:
             response = requests.get(
                 endpoint,
-                json={"text": sentence, "voice": voice, "pitch": pitch},
+                json={"text": sentence, "voice": voice},
             )
 
             if response.status_code != 200:
@@ -88,7 +105,20 @@ def text_to_speech_handler(
         final_audio += sentence_audio
         # ""Goldman-Eisler (1968) determined that typical speakers paused for an average of 250 milliseconds (ms), with a range from 150 to 400 ms.""
         # (https://scholarsarchive.byu.edu/cgi/viewcontent.cgi?article=10153&context=etd)
-
+    if pitch != 0:
+        pitch = 0.5 + (pitch - -12) * (1.5 - 0.5) / (12 - -12)
+        numpy_audio = audiosegment_to_librosawav(final_audio)
+        dtype = numpy_audio.dtype
+        scale = np.finfo(dtype).max ** -1
+        numpy_audio = numpy_audio.astype(np.float32) # use at least float32
+        numpy_audio = numpy_audio * scale
+        shifted_audio = pitch_shifter.shiftpitch(numpy_audio, pitch, normalization=True)
+        dtype = np.float32
+        scale = np.finfo(dtype).max
+        shifted_audio = shifted_audio.clip(-1, +1) # preventively avoid clipping
+        shifted_audio = (shifted_audio * scale).astype(dtype)
+        sf.write(data_bytes, shifted_audio, 24000, format="wav")
+        final_audio = pydub.AudioSegment.from_file(io.BytesIO(data_bytes.getvalue()), "wav")
     print(f"Total time to generate audio: {now() - start_time}")
     start_time = now()
 
@@ -217,8 +247,8 @@ def text_to_speech_normal():
         voice,
         text,
         filter_complex,
-        pitch,
-        special_filters,
+        int(pitch),
+        special_filters
     )
 
 
@@ -234,15 +264,14 @@ def text_to_speech_blips():
     if pitch == "":
         pitch = "0"
     special_filters = special_filters.split("|")
-
     filter_complex = request.args.get("filter", "")
     return text_to_speech_handler(
         "http://blips:5003/generate-tts-blips",
         voice,
         text,
         filter_complex,
-        pitch,
-        special_filters,
+        int(pitch),
+        special_filters
     )
 
 
@@ -260,15 +289,10 @@ def tts_health_check():
     gc.collect()
     return "OK", 200
 
-
 @app.route("/pitch-available")
-def pitch_available():
+def superpitch_available():
     if authorization_token != request.headers.get("Authorization", ""):
         abort(401)
-
-    response = requests.get(f"http://haproxy:5003/pitch-available")
-    if response.status_code != 200:
-        abort(500)
     return make_response("Pitch available", 200)
 
 

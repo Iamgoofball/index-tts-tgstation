@@ -1,30 +1,16 @@
-import glob
-import scipy
-import scipy.signal as signal
 import torch
 import os
 import io
 import json
-import gc
-import random
-import numpy as np
 from typing import *
 from pydub import AudioSegment
-from pydub.silence import split_on_silence, detect_leading_silence
-import librosa
-import numpy as np
-import random
-import torch
-import numpy as np
-import torch
+from pydub.silence import detect_leading_silence
 from torchaudio._extension.utils import _init_dll_path
 _init_dll_path() # I LOVE PYTORCH I LOVE PYTORCH I LOVE PYTORCH FUCKING TORCHAUDIO SUCKS ASS
 import io
-import librosa
 from pydub import AudioSegment, effects  
 import json
-from flask import Flask, request, send_file, abort, make_response
-import soundfile as sf
+from flask import Flask, request, send_file
 from tqdm import tqdm
 from indextts.infer import IndexTTS
 
@@ -53,8 +39,7 @@ global request_count
 def text_to_speech():
 	text = request.json.get("text", "")
 	voice = request.json.get("voice", "")
-	pitch_adjustment = request.json.get("pitch", "")
-	print(voice + " (" + pitch_adjustment + ") says, " + "\"" + text + "\"")
+	print(voice + " says, " + "\"" + text + "\"")
 	if use_voice_name_mapping:
 		voice = voice_name_mapping_reversed[voice]
 	result = None
@@ -80,43 +65,11 @@ def text_to_speech():
 			# Inference
 			loaded_speaker = latent_cache[voice]
 			tts.infer_tg(cached_voice=loaded_speaker, text=text, output_path=data_bytes)
-			ugh, sr = librosa.load(io.BytesIO(data_bytes.getvalue()), sr=24000)
-			data_bytes = io.BytesIO()
-			sf.write(data_bytes, librosa.effects.pitch_shift(ugh, sr=24000, bins_per_octave=48, n_steps=int(pitch_adjustment)), 24000, format="wav")
 			rawsound = AudioSegment.from_file(io.BytesIO(data_bytes.getvalue()), "wav")  
 			normalizedsound = effects.normalize(rawsound)  
 			normalizedsound.export(data_bytes, format="wav")
 			result = send_file(io.BytesIO(data_bytes.getvalue()), mimetype="audio/wav")
 	return result
-
-def save_wav(*, wav: np.ndarray, path: str, sample_rate: int = None, pipe_out=None, **kwargs) -> None:
-	"""Save float waveform to a file using Scipy.
-
-	Args:
-		wav (np.ndarray): Waveform with float values in range [-1, 1] to save.
-		path (str): Path to a output file.
-		sr (int, optional): Sampling rate used for saving to the file. Defaults to None.
-		pipe_out (BytesIO, optional): Flag to stdout the generated TTS wav file for shell pipe.
-	"""
-	wav_norm = wav * (32767 / max(0.01, np.max(np.abs(wav))))
-
-	wav_norm = wav_norm.astype(np.int16)
-	if pipe_out:
-		wav_buffer = io.BytesIO()
-		scipy.io.wavfile.write(wav_buffer, sample_rate, wav_norm)
-		wav_buffer.seek(0)
-		pipe_out.buffer.write(wav_buffer.read())
-	scipy.io.wavfile.write(path, sample_rate, wav_norm)
-
-def audiosegment_to_librosawav(audiosegment):    
-    channel_sounds = audiosegment.split_to_mono()
-    samples = [s.get_array_of_samples() for s in channel_sounds]
-
-    fp_arr = np.array(samples).T.astype(np.float32)
-    fp_arr /= np.iinfo(samples[0].typecode).max
-    fp_arr = fp_arr.reshape(-1)
-
-    return fp_arr
 
 @app.route("/tts-voices")
 def voices_list():
@@ -128,10 +81,6 @@ def voices_list():
 @app.route("/health-check")
 def tts_health_check():
     return f"OK: 1", 200
-
-@app.route("/pitch-available")
-def pitch_available():
-	return make_response("Pitch available", 200)
 
 if __name__ == "__main__":
 	from waitress import serve
