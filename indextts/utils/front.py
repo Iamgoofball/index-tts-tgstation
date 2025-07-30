@@ -97,34 +97,16 @@ class TextNormalizer:
         self.en_normalizer = Normalizer(lang="en", operator="tn")
 
     def normalize(self, text: str) -> str:
-        text = text.replace("嗯", "恩").replace("呣", "母")
         if not self.zh_normalizer or not self.en_normalizer:
             print("Error, text normalizer is not initialized !!!")
             return ""
-        if self.use_chinese(text):
-            text = re.sub(TextNormalizer.ENGLISH_CONTRACTION_PATTERN, r"\1 is", text, flags=re.IGNORECASE)
-            replaced_text, pinyin_list = self.save_pinyin_tones(text.rstrip())
-            
-            replaced_text, original_name_list = self.save_names(replaced_text)
-            try:
-                result = self.zh_normalizer.normalize(replaced_text)
-            except Exception:
-                result = ""
-                print(traceback.format_exc())
-            # 恢复人名
-            result = self.restore_names(result, original_name_list)
-            # 恢复拼音声调
-            result = self.restore_pinyin_tones(result, pinyin_list)
-            pattern = re.compile("|".join(re.escape(p) for p in self.zh_char_rep_map.keys()))
-            result = pattern.sub(lambda x: self.zh_char_rep_map[x.group()], result)
-        else:
-            try:
-                result = self.en_normalizer.normalize(text)
-            except Exception:
-                result = text
-                print(traceback.format_exc())
-            pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
-            result = pattern.sub(lambda x: self.char_rep_map[x.group()], result)
+        try:
+            result = self.en_normalizer.normalize(text)
+        except Exception:
+            result = text
+            print(traceback.format_exc())
+        pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
+        result = pattern.sub(lambda x: self.char_rep_map[x.group()], result)
         return result
 
     def correct_pinyin(self, pinyin: str):
