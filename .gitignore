@@ -1,18 +1,35 @@
-venv/
-__pycache__
-*.egg-info
-*.DS_Store
+# Development Tools.
+.mypy_cache/
+.ruff_cache/
+__pycache__/
 .idea/
 .vscode/
-checkpoints/*.pth
-checkpoints/*.vocab
-checkpoints/*.model
-checkpoints/.cache
-outputs/
-build/
+
+# Environments.
+.venv*/
+venv*/
+conda_env*/
+
+# Python Bytecode.
 *.py[cod]
+
+# Distribution/Packaging.
+/build/
+/dist/
 *.egg-info/
 .venv
 samples/**/*.wav
 speaker_latents/*.speaker
 cache/**/*.wav
+.pypirc
+
+# Operating System Junk.
+*.DS_Store
+Thumbs.db
+desktop.ini
+
+# IndexTTS.
+/cache/
+/checkpoints/*
+!/checkpoints/*.yaml
+/outputs/

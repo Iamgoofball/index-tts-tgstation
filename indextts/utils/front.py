@@ -76,14 +76,7 @@ class TextNormalizer:
 
 
     def use_chinese(self, s):
-        has_chinese = bool(re.search(r"[\u4e00-\u9fff]", s))
-        has_alpha = bool(re.search(r"[a-zA-Z]", s))
-        is_email = self.match_email(s)
-        if has_chinese or not has_alpha or is_email:
-            return True
-
-        has_pinyin = bool(re.search(TextNormalizer.PINYIN_TONE_PATTERN, s, re.IGNORECASE))
-        return has_pinyin
+        return False # we're not using chinese in /tg/station text input
 
     def load(self):
         # print(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -91,22 +84,48 @@ class TextNormalizer:
         import platform
         if self.zh_normalizer is not None and self.en_normalizer is not None:
             return
-        from wetext import Normalizer
+        if platform.system() != "Linux":  # Mac and Windows
+            from wetext import Normalizer
 
-        self.zh_normalizer = Normalizer(remove_erhua=False, lang="zh", operator="tn")
-        self.en_normalizer = Normalizer(lang="en", operator="tn")
+            self.zh_normalizer = Normalizer(remove_erhua=False, lang="zh", operator="tn")
+            self.en_normalizer = Normalizer(lang="en", operator="tn")
+        else:
+            from tn.chinese.normalizer import Normalizer as NormalizerZh
+            from tn.english.normalizer import Normalizer as NormalizerEn
+            # use new cache dir for build tagger rules with disable remove_interjections and remove_erhua
+            cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tagger_cache")
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+                with open(os.path.join(cache_dir, ".gitignore"), "w") as f:
+                    f.write("*\n")
+            self.zh_normalizer = NormalizerZh(
+                cache_dir=cache_dir, remove_interjections=False, remove_erhua=False, overwrite_cache=False
+            )
+            self.en_normalizer = NormalizerEn(overwrite_cache=False)
 
     def normalize(self, text: str) -> str:
         if not self.zh_normalizer or not self.en_normalizer:
             print("Error, text normalizer is not initialized !!!")
             return ""
-        try:
-            result = self.en_normalizer.normalize(text)
-        except Exception:
-            result = text
-            print(traceback.format_exc())
-        pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
-        result = pattern.sub(lambda x: self.char_rep_map[x.group()], result)
+        if self.use_chinese(text):
+            text = re.sub(TextNormalizer.ENGLISH_CONTRACTION_PATTERN, r"\1 is", text, flags=re.IGNORECASE)
+            replaced_text, pinyin_list = self.save_pinyin_tones(text.rstrip())
+            
+            replaced_text, original_name_list = self.save_names(replaced_text)
+            try:
+                result = self.zh_normalizer.normalize(replaced_text)
+            except Exception:
+                result = ""
+                print(traceback.format_exc())
+            # 恢复人名
+            result = self.restore_names(result, original_name_list)
+            # 恢复拼音声调
+            result = self.restore_pinyin_tones(result, pinyin_list)
+            pattern = re.compile("|".join(re.escape(p) for p in self.zh_char_rep_map.keys()))
+            result = pattern.sub(lambda x: self.zh_char_rep_map[x.group()], result)
+        else:
+            pattern = re.compile("|".join(re.escape(p) for p in self.char_rep_map.keys()))
+            result = pattern.sub(lambda x: self.char_rep_map[x.group()], result)
         return result
 
     def correct_pinyin(self, pinyin: str):
@@ -310,8 +329,8 @@ class TextTokenizer:
         return de_tokenized_by_CJK_char(decoded, do_lower_case=do_lower_case)
 
     @staticmethod
-    def split_sentences_by_token(
-        tokenized_str: List[str], split_tokens: List[str], max_tokens_per_sentence: int
+    def split_segments_by_token(
+        tokenized_str: List[str], split_tokens: List[str], max_text_tokens_per_segment: int
     ) -> List[List[str]]:
         """
         将tokenize后的结果按特定token进一步分割
@@ -319,67 +338,67 @@ class TextTokenizer:
         # 处理特殊情况
         if len(tokenized_str) == 0:
             return []
-        sentences: List[List[str]] = []
-        current_sentence = []
-        current_sentence_tokens_len = 0
+        segments: List[List[str]] = []
+        current_segment = []
+        current_segment_tokens_len = 0
         for i in range(len(tokenized_str)):
             token = tokenized_str[i]
-            current_sentence.append(token)
-            current_sentence_tokens_len += 1
-            if current_sentence_tokens_len <= max_tokens_per_sentence:
-                if token in split_tokens and current_sentence_tokens_len > 2:
+            current_segment.append(token)
+            current_segment_tokens_len += 1
+            if current_segment_tokens_len <= max_text_tokens_per_segment:
+                if token in split_tokens and current_segment_tokens_len > 2:
                     if i < len(tokenized_str) - 1:
                         if tokenized_str[i + 1] in ["'", "▁'"]:
                             # 后续token是'，则不切分
-                            current_sentence.append(tokenized_str[i + 1])
+                            current_segment.append(tokenized_str[i + 1])
                             i += 1
-                    sentences.append(current_sentence)
-                    current_sentence = []
-                    current_sentence_tokens_len = 0
+                    segments.append(current_segment)
+                    current_segment = []
+                    current_segment_tokens_len = 0
                 continue
             # 如果当前tokens的长度超过最大限制
-            if not  ("," in split_tokens or "▁," in split_tokens ) and ("," in current_sentence or "▁," in current_sentence): 
+            if not  ("," in split_tokens or "▁," in split_tokens ) and ("," in current_segment or "▁," in current_segment): 
                 # 如果当前tokens中有,，则按,分割
-                sub_sentences = TextTokenizer.split_sentences_by_token(
-                    current_sentence, [",", "▁,"], max_tokens_per_sentence=max_tokens_per_sentence
+                sub_segments = TextTokenizer.split_segments_by_token(
+                    current_segment, [",", "▁,"], max_text_tokens_per_segment=max_text_tokens_per_segment
                 )
-            elif "-" not in split_tokens and "-" in current_sentence:
+            elif "-" not in split_tokens and "-" in current_segment:
                 # 没有,，则按-分割
-                sub_sentences = TextTokenizer.split_sentences_by_token(
-                    current_sentence, ["-"], max_tokens_per_sentence=max_tokens_per_sentence
+                sub_segments = TextTokenizer.split_segments_by_token(
+                    current_segment, ["-"], max_text_tokens_per_segment=max_text_tokens_per_segment
                 )
             else:
                 # 按照长度分割
-                sub_sentences = []
-                for j in range(0, len(current_sentence), max_tokens_per_sentence):
-                    if j + max_tokens_per_sentence < len(current_sentence):
-                        sub_sentences.append(current_sentence[j : j + max_tokens_per_sentence])
+                sub_segments = []
+                for j in range(0, len(current_segment), max_text_tokens_per_segment):
+                    if j + max_text_tokens_per_segment < len(current_segment):
+                        sub_segments.append(current_segment[j : j + max_text_tokens_per_segment])
                     else:
-                        sub_sentences.append(current_sentence[j:])
+                        sub_segments.append(current_segment[j:])
                 warnings.warn(
-                    f"The tokens length of sentence exceeds limit: {max_tokens_per_sentence}, "
-                    f"Tokens in sentence: {current_sentence}."
+                    f"The tokens length of segment exceeds limit: {max_text_tokens_per_segment}, "
+                    f"Tokens in segment: {current_segment}."
                     "Maybe unexpected behavior",
                     RuntimeWarning,
                 )
-            sentences.extend(sub_sentences)
-            current_sentence = []
-            current_sentence_tokens_len = 0
-        if current_sentence_tokens_len > 0:
-            assert current_sentence_tokens_len <= max_tokens_per_sentence
-            sentences.append(current_sentence)
+            segments.extend(sub_segments)
+            current_segment = []
+            current_segment_tokens_len = 0
+        if current_segment_tokens_len > 0:
+            assert current_segment_tokens_len <= max_text_tokens_per_segment
+            segments.append(current_segment)
         # 如果相邻的句子加起来长度小于最大限制，则合并
-        merged_sentences = []
-        for sentence in sentences:
-            if len(sentence) == 0:
+        merged_segments = []
+        for segment in segments:
+            if len(segment) == 0:
                 continue
-            if len(merged_sentences) == 0:
-                merged_sentences.append(sentence)
-            elif len(merged_sentences[-1]) + len(sentence) <= max_tokens_per_sentence:
-                merged_sentences[-1] = merged_sentences[-1] + sentence
+            if len(merged_segments) == 0:
+                merged_segments.append(segment)
+            elif len(merged_segments[-1]) + len(segment) <= max_text_tokens_per_segment:
+                merged_segments[-1] = merged_segments[-1] + segment
             else:
-                merged_sentences.append(sentence)
-        return merged_sentences
+                merged_segments.append(segment)
+        return merged_segments
 
     punctuation_marks_tokens = [
         ".",
@@ -390,9 +409,9 @@ class TextTokenizer:
         "▁?",
         "▁...", # ellipsis
     ]
-    def split_sentences(self, tokenized: List[str], max_tokens_per_sentence=120) -> List[List[str]]:
-        return TextTokenizer.split_sentences_by_token(
-            tokenized, self.punctuation_marks_tokens, max_tokens_per_sentence=max_tokens_per_sentence
+    def split_segments(self, tokenized: List[str], max_text_tokens_per_segment=120) -> List[List[str]]:
+        return TextTokenizer.split_segments_by_token(
+            tokenized, self.punctuation_marks_tokens, max_text_tokens_per_segment=max_text_tokens_per_segment
         )
 
 
@@ -484,19 +503,19 @@ if __name__ == "__main__":
         # 测试 normalize后的字符能被分词器识别
         print(f"`{ch}`", "->", tokenizer.sp_model.Encode(ch, out_type=str))
         print(f"` {ch}`", "->", tokenizer.sp_model.Encode(f" {ch}", out_type=str))
-    max_tokens_per_sentence=120
+    max_text_tokens_per_segment=120
     for i in range(len(cases)):
         print(f"原始文本: {cases[i]}")
         print(f"Normalized: {text_normalizer.normalize(cases[i])}")
         tokens = tokenizer.tokenize(cases[i])
         print("Tokenzied: ", ", ".join([f"`{t}`" for t in tokens]))
-        sentences = tokenizer.split_sentences(tokens, max_tokens_per_sentence=max_tokens_per_sentence)
-        print("Splitted sentences count:", len(sentences))
-        if len(sentences) > 1:
-            for j in range(len(sentences)):
-                print(f"  {j}, count:", len(sentences[j]), ", tokens:", "".join(sentences[j]))
-                if len(sentences[j]) > max_tokens_per_sentence:
-                    print(f"Warning: sentence {j} is too long, length: {len(sentences[j])}")
+        segments = tokenizer.split_segments(tokens, max_text_tokens_per_segment=max_text_tokens_per_segment)
+        print("Segments count:", len(segments))
+        if len(segments) > 1:
+            for j in range(len(segments)):
+                print(f"  {j}, count:", len(segments[j]), ", tokens:", "".join(segments[j]))
+                if len(segments[j]) > max_text_tokens_per_segment:
+                    print(f"Warning: segment {j} is too long, length: {len(segments[j])}")
         #print(f"Token IDs (first 10): {codes[i][:10]}")
         if tokenizer.unk_token in codes[i]:
             print(f"Warning: `{cases[i]}` contains UNKNOWN token")
